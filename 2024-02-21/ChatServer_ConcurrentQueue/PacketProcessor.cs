@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,9 +16,7 @@ namespace ChatServer
         bool IsThreadRunning = false;
         System.Threading.Thread ProcessThread = null;
 
-        //receive쪽에서 처리하지 않아도 Post에서 블럭킹 되지 않는다. 
-        //BufferBlock<T>(DataflowBlockOptions) 에서 DataflowBlockOptions의 BoundedCapacity로 버퍼 가능 수 지정. BoundedCapacity 보다 크게 쌓이면 블럭킹 된다
-        BufferBlock<ServerPacketData> MsgBuffer = new BufferBlock<ServerPacketData>();
+        ConcurrentQueue<ServerPacketData> MsgQueue = new();
 
         UserManager UserMgr = new UserManager();
 
@@ -50,12 +49,11 @@ namespace ChatServer
         public void Destory()
         {
             IsThreadRunning = false;
-            MsgBuffer.Complete();
         }
               
         public void InsertPacket(ServerPacketData data)
         {
-            MsgBuffer.Post(data);
+            MsgQueue.Enqueue(data);
         }
 
         
@@ -76,7 +74,14 @@ namespace ChatServer
                 //System.Threading.Thread.Sleep(64); //테스트 용
                 try
                 {
-                    var packet = MsgBuffer.Receive();
+                    ServerPacketData packet;
+                    
+                    if (MsgQueue.TryDequeue(out packet) == false)
+                    {
+                        System.Threading.Thread.Sleep(1);
+                        continue;
+                    }
+
 
                     if (PacketHandlerMap.ContainsKey(packet.PacketID))
                     {
